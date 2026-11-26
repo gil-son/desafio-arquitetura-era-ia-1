@@ -1,49 +1,99 @@
 # Configuração do AI Gateway (LiteLLM Proxy).
 #
-# A aplicação só conhece os NOMES LÓGICOS (model_name) abaixo. O modelo físico
-# (gpt-fake-*, claude-fake-*), o provider, o formato e a credencial vivem aqui.
-# Trocar o modelo de uma capacidade = editar este arquivo e reiniciar só o gateway.
+# A aplicação só conhece os NOMES LÓGICOS primários (classification, suggestion,
+# topics, extraction). Os destinos *-fallback (equivalente no outro provider) e
+# *-weak (modelo fraco) são alvos internos de roteamento; a app nunca os chama.
 #
-# Preços declarados (o LiteLLM não conhece os modelos simulados): sem eles o
-# custo seria zero e nenhum orçamento estouraria. Valores em USD por token,
-# derivados da tabela do provider-fake (US$ por 1M tokens / 1e6).
+# Preços declarados (o LiteLLM não conhece os modelos simulados): sem eles o custo
+# seria zero e nenhum orçamento estouraria. USD por token = (US$/1M) / 1e6.
 
 model_list:
-  # --- F1 Classificar ticket ---
-  - model_name: classification
+  # ===================== F1 Classificar ticket =====================
+  - model_name: classification            # primário: OpenAI large
     litellm_params:
       model: openai/gpt-fake-large
       api_base: http://provider-fake:8090/openai/v1
       api_key: os.environ/FAKE_OPENAI_KEY
       input_cost_per_token: 0.0000025
       output_cost_per_token: 0.00001
-
-  # --- F2 Sugerir resposta ---
-  - model_name: suggestion
+  - model_name: classification-fallback   # fallback técnico: Anthropic large (equivalente)
     litellm_params:
       model: anthropic/claude-fake-large
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
+  - model_name: classification-weak       # modelo fraco: mini (classify é idêntico large/mini)
+    litellm_params:
+      model: openai/gpt-fake-mini
+      api_base: http://provider-fake:8090/openai/v1
+      api_key: os.environ/FAKE_OPENAI_KEY
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000006
 
-  # --- F3 Relatório de temas ---
-  - model_name: topics
+  # ===================== F2 Sugerir resposta =======================
+  - model_name: suggestion                # primário: Anthropic large
     litellm_params:
       model: anthropic/claude-fake-large
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
-
-  # --- F4 Extrair dados do pedido ---
-  - model_name: extraction
+  - model_name: suggestion-fallback       # fallback técnico: OpenAI large (equivalente)
     litellm_params:
       model: openai/gpt-fake-large
       api_base: http://provider-fake:8090/openai/v1
       api_key: os.environ/FAKE_OPENAI_KEY
       input_cost_per_token: 0.0000025
       output_cost_per_token: 0.00001
+  - model_name: suggestion-weak           # modelo fraco: mini (texto mais curto, mesmo sentido)
+    litellm_params:
+      model: anthropic/claude-fake-mini
+      api_base: http://provider-fake:8090/anthropic
+      api_key: os.environ/FAKE_ANTHROPIC_KEY
+      input_cost_per_token: 0.0000008
+      output_cost_per_token: 0.000004
+
+  # ===================== F3 Relatório de temas =====================
+  - model_name: topics                    # primário: Anthropic large
+    litellm_params:
+      model: anthropic/claude-fake-large
+      api_base: http://provider-fake:8090/anthropic
+      api_key: os.environ/FAKE_ANTHROPIC_KEY
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+  - model_name: topics-fallback           # fallback técnico: OpenAI large (equivalente)
+    litellm_params:
+      model: openai/gpt-fake-large
+      api_base: http://provider-fake:8090/openai/v1
+      api_key: os.environ/FAKE_OPENAI_KEY
+      input_cost_per_token: 0.0000025
+      output_cost_per_token: 0.00001
+  - model_name: topics-weak               # modelo fraco: mini (topics é idêntico large/mini)
+    litellm_params:
+      model: anthropic/claude-fake-mini
+      api_base: http://provider-fake:8090/anthropic
+      api_key: os.environ/FAKE_ANTHROPIC_KEY
+      input_cost_per_token: 0.0000008
+      output_cost_per_token: 0.000004
+
+  # ===================== F4 Extrair dados do pedido ================
+  # SEM destino -weak: o mini erra o pedido (pega a nota fiscal) e zera o produto,
+  # e a F4 alimenta automação sem revisão humana. Sem large, FALHA explícita.
+  - model_name: extraction                # primário: OpenAI large
+    litellm_params:
+      model: openai/gpt-fake-large
+      api_base: http://provider-fake:8090/openai/v1
+      api_key: os.environ/FAKE_OPENAI_KEY
+      input_cost_per_token: 0.0000025
+      output_cost_per_token: 0.00001
+  - model_name: extraction-fallback       # fallback técnico: Anthropic large (equivalente)
+    litellm_params:
+      model: anthropic/claude-fake-large
+      api_base: http://provider-fake:8090/anthropic
+      api_key: os.environ/FAKE_ANTHROPIC_KEY
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -51,3 +101,22 @@ general_settings:
 
 litellm_settings:
   drop_params: true
+  # Resiliência (vale para toda capacidade):
+  # - timeout explícito por requisição ao provider;
+  # - retry limitado com backoff para falhas transitórias;
+  # - fallback técnico -> equivalente em outro provider; depois modelo fraco (onde existe).
+  request_timeout: 10
+  num_retries: 1
+  retry_after: 1
+  allowed_fails: 0
+  cooldown_time: 1
+  fallbacks:
+    - classification: ["classification-fallback", "classification-weak"]
+    - suggestion: ["suggestion-fallback", "suggestion-weak"]
+    - topics: ["topics-fallback", "topics-weak"]
+    - extraction: ["extraction-fallback"]
+  context_window_fallbacks:
+    - classification: ["classification-fallback"]
+    - suggestion: ["suggestion-fallback"]
+    - topics: ["topics-fallback"]
+    - extraction: ["extraction-fallback"]

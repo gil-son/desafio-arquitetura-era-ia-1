@@ -24,7 +24,7 @@ MODELS = ["classification", "suggestion", "topics", "extraction"]
 
 KEYS = [
     {"key": os.environ["HELPDESK_GATEWAY_KEY"], "max_budget": 1000.0, "key_alias": "helpdesk-app"},
-    {"key": os.environ["GATEWAY_BUDGET_KEY"], "max_budget": 0.01, "key_alias": "helpdesk-budget-demo"},
+    {"key": os.environ["GATEWAY_BUDGET_KEY"], "max_budget": 0.001, "key_alias": "helpdesk-budget-demo"},
     {"key": os.environ["GATEWAY_RATELIMIT_KEY"], "rpm_limit": 2, "key_alias": "helpdesk-rpm-demo"},
 ]
 
