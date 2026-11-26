@@ -6,6 +6,10 @@
 #
 # Preços declarados (o LiteLLM não conhece os modelos simulados): sem eles o custo
 # seria zero e nenhum orçamento estouraria. USD por token = (US$/1M) / 1e6.
+#
+# timeout por deployment: F1/F4 (classification/extraction) usam o request_timeout
+# global de 5s, para caber no orçamento de 15s mesmo com retry+fallback. F2/F3
+# (suggestion/topics) sobrescrevem para 60s (saída longa de streaming / lotes).
 
 model_list:
   # ===================== F1 Classificar ticket =====================
@@ -37,6 +41,7 @@ model_list:
       model: anthropic/claude-fake-large
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
+      timeout: 60
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
   - model_name: suggestion-fallback       # fallback técnico: OpenAI large (equivalente)
@@ -44,6 +49,7 @@ model_list:
       model: openai/gpt-fake-large
       api_base: http://provider-fake:8090/openai/v1
       api_key: os.environ/FAKE_OPENAI_KEY
+      timeout: 60
       input_cost_per_token: 0.0000025
       output_cost_per_token: 0.00001
   - model_name: suggestion-weak           # modelo fraco: mini (texto mais curto, mesmo sentido)
@@ -51,6 +57,7 @@ model_list:
       model: anthropic/claude-fake-mini
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
+      timeout: 60
       input_cost_per_token: 0.0000008
       output_cost_per_token: 0.000004
 
@@ -60,6 +67,7 @@ model_list:
       model: anthropic/claude-fake-large
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
+      timeout: 60
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
   - model_name: topics-fallback           # fallback técnico: OpenAI large (equivalente)
@@ -67,6 +75,7 @@ model_list:
       model: openai/gpt-fake-large
       api_base: http://provider-fake:8090/openai/v1
       api_key: os.environ/FAKE_OPENAI_KEY
+      timeout: 60
       input_cost_per_token: 0.0000025
       output_cost_per_token: 0.00001
   - model_name: topics-weak               # modelo fraco: mini (topics é idêntico large/mini)
@@ -74,6 +83,7 @@ model_list:
       model: anthropic/claude-fake-mini
       api_base: http://provider-fake:8090/anthropic
       api_key: os.environ/FAKE_ANTHROPIC_KEY
+      timeout: 60
       input_cost_per_token: 0.0000008
       output_cost_per_token: 0.000004
 
@@ -102,10 +112,10 @@ general_settings:
 litellm_settings:
   drop_params: true
   # Resiliência (vale para toda capacidade):
-  # - timeout explícito por requisição ao provider;
+  # - timeout explícito por requisição (4s global; 60s nos deployments de F2/F3);
   # - retry limitado com backoff para falhas transitórias;
   # - fallback técnico -> equivalente em outro provider; depois modelo fraco (onde existe).
-  request_timeout: 10
+  request_timeout: 4
   num_retries: 1
   retry_after: 1
   allowed_fails: 0

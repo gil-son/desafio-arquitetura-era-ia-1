@@ -1,9 +1,15 @@
+from typing import Iterator
+
 from .ports import LLMGateway
-from .schemas import ReplySuggestion, TicketInput
+from .schemas import TicketInput
 
 CAPABILITY = "suggestion"
 
 
-def suggest(ticket: TicketInput, gateway: LLMGateway) -> ReplySuggestion:
-    text = gateway.complete(CAPABILITY, "suggest", ticket.text)
-    return ReplySuggestion(ticket_id=ticket.ticket_id, suggestion=text)
+def suggest_stream(ticket: TicketInput, gateway: LLMGateway) -> Iterator[str]:
+    """Trechos da sugestão, conforme chegam do gateway (streaming).
+
+    A moldura SSE (eventos data/end/error) é responsabilidade do ponto de
+    composição (main); aqui mora só a capacidade e a tarefa.
+    """
+    return gateway.stream(CAPABILITY, "suggest", ticket.text)
