@@ -15,9 +15,64 @@ services:
       app:
         condition: service_healthy
 
+  # Banco do gateway: o LiteLLM precisa de Postgres para virtual keys, orçamentos
+  # e limites de requisição (governança do requisito 5). Justificado no ADR 0005.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # AI Gateway (LiteLLM Proxy). Única peça que conhece os modelos físicos, os
+  # providers, os formatos e as chaves dos providers.
+  gateway:
+    image: ghcr.io/berriai/litellm:v1.102.1
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://litellm:litellm@db:5432/litellm
+      STORE_MODEL_IN_DB: "False"
+    volumes:
+      - ./gateway/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+    depends_on:
+      db:
+        condition: service_healthy
+      provider-fake:
+        condition: service_healthy
+
+  # Cria as virtual keys (app + governança) sem passo manual, assim que o gateway
+  # fica saudável. Roda uma vez e encerra. Detalhes no ADR 0006.
+  gateway-bootstrap:
+    image: ghcr.io/berriai/litellm:v1.102.1
+    entrypoint: ["python", "/bootstrap/create_keys.py"]
+    env_file: .env
+    volumes:
+      - ./gateway/bootstrap:/bootstrap:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: "no"
+
   app:
     build: ./app
-    env_file: .env
+    # IMPORTANTE: o serviço app NÃO recebe as chaves dos providers. Só as duas
+    # variáveis do gateway são injetadas explicitamente (sem env_file: .env).
+    environment:
+      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL}
+      HELPDESK_GATEWAY_KEY: ${HELPDESK_GATEWAY_KEY}
     volumes:
       - ./data:/data:ro
     healthcheck:
@@ -26,5 +81,7 @@ services:
       timeout: 3s
       retries: 20
     depends_on:
-      provider-fake:
+      gateway:
         condition: service_healthy
+      gateway-bootstrap:
+        condition: service_completed_successfully
